@@ -36,29 +36,15 @@ class StudyGhost:
 
 
 @dataclass(slots=True)
-class SyncBatch:
-    student_id: str | None
-    events: list[StudyEvent]
-    signatures: list[str]
-
-
-@dataclass(slots=True)
 class LocalSyncEngine:
     """Offline-first event recorder with lightweight anti-spoof verification."""
 
     max_event_duration: timedelta = timedelta(hours=3)
     _events: list[StudyEvent] = field(default_factory=list)
-    _nonce_index: set[tuple[str, str]] = field(default_factory=set)
 
     def record(self, event: StudyEvent) -> str:
         self._validate(event)
-
-        nonce_key = (event.student_id, event.nonce)
-        if nonce_key in self._nonce_index:
-            raise ValueError("duplicate nonce for student; possible replayed event")
-
         self._events.append(event)
-        self._nonce_index.add(nonce_key)
         return self._signature_for(event)
 
     def pending_events(self, student_id: str | None = None) -> list[StudyEvent]:
@@ -66,28 +52,17 @@ class LocalSyncEngine:
             return list(self._events)
         return [event for event in self._events if event.student_id == student_id]
 
-    def create_sync_batch(self, student_id: str | None = None) -> SyncBatch:
-        events = self.pending_events(student_id)
-        signatures = [self._signature_for(event) for event in events]
-        return SyncBatch(student_id=student_id, events=events, signatures=signatures)
-
-    def acknowledge_batch(self, batch: SyncBatch) -> dict[str, int]:
-        if not self.verify_signatures(batch.events, batch.signatures):
-            raise ValueError("invalid sync batch signatures")
-
-        xp_total = sum(event.value for event in batch.events if event.kind == "xp")
-        pomodoros = sum(event.value for event in batch.events if event.kind == "pomodoro")
-
-        batch_keys = {(event.student_id, event.nonce) for event in batch.events}
-        self._events = [
-            event for event in self._events if (event.student_id, event.nonce) not in batch_keys
-        ]
-
-        return {"xp_total": xp_total, "pomodoros": pomodoros, "count": len(batch.events)}
-
     def burst_sync(self, student_id: str | None = None) -> dict[str, int]:
-        batch = self.create_sync_batch(student_id)
-        return self.acknowledge_batch(batch)
+        selected = self.pending_events(student_id)
+        xp_total = sum(event.value for event in selected if event.kind == "xp")
+        pomodoros = sum(event.value for event in selected if event.kind == "pomodoro")
+
+        if student_id is None:
+            self._events.clear()
+        else:
+            self._events = [event for event in self._events if event.student_id != student_id]
+
+        return {"xp_total": xp_total, "pomodoros": pomodoros, "count": len(selected)}
 
     def ghost_for(self, profile: StudentProfile) -> StudyGhost | None:
         events = self.pending_events(profile.student_id)

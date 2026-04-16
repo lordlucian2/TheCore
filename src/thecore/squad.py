@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .analytics import StudentSnapshot, predicted_grade
 from .engine import LocalSyncEngine, StudentProfile
 
 
@@ -19,17 +18,11 @@ class SquadDashboard:
             events = self.engine.pending_events(student.student_id)
             xp_total = sum(event.value for event in events if event.kind == "xp")
             pomodoros = sum(event.value for event in events if event.kind == "pomodoro")
-            snapshot = StudentSnapshot(
-                student_id=student.student_id,
-                xp_total=xp_total,
-                pomodoros=pomodoros,
-            )
             result[student.student_id] = {
                 "name": student.display_name,
                 "xp_total": xp_total,
                 "pomodoros": pomodoros,
                 "pending_events": len(events),
-                "predicted_grade": predicted_grade(snapshot),
             }
 
         return result
