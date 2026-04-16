@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta, timezone
 import unittest
 
+from src.thecore.analytics import StudentSnapshot, monthly_pulse_ranking, predicted_grade
 from src.thecore.engine import LocalSyncEngine, StudyEvent, StudentProfile
 from src.thecore.quests import generate_tutorial_quests
+from src.thecore.service import TheCoreService
 from src.thecore.squad import SquadDashboard
+from src.thecore.storage import SQLiteEventStore
 
 
 class TheCoreTests(unittest.TestCase):
@@ -31,7 +34,29 @@ class TheCoreTests(unittest.TestCase):
         self.assertIsNotNone(ghost)
         self.assertIn("was active", ghost.summary)
 
-    def test_burst_sync_clears_events(self) -> None:
+    def test_duplicate_nonce_is_rejected(self) -> None:
+        base_event = StudyEvent(
+            student_id=self.student.student_id,
+            kind="xp",
+            value=100,
+            started_at=self.now - timedelta(minutes=20),
+            ended_at=self.now - timedelta(minutes=10),
+            nonce="nonce-1",
+        )
+        self.engine.record(base_event)
+
+        replay = StudyEvent(
+            student_id=self.student.student_id,
+            kind="xp",
+            value=100,
+            started_at=self.now - timedelta(minutes=20),
+            ended_at=self.now - timedelta(minutes=10),
+            nonce="nonce-1",
+        )
+        with self.assertRaises(ValueError):
+            self.engine.record(replay)
+
+    def test_sync_batch_acknowledge(self) -> None:
         self.engine.record(
             StudyEvent(
                 student_id=self.student.student_id,
@@ -79,17 +104,62 @@ class TheCoreTests(unittest.TestCase):
             StudyEvent(
                 student_id=self.student.student_id,
                 kind="xp",
-                value=200,
+                value=1000,
                 started_at=self.now - timedelta(minutes=30),
                 ended_at=self.now - timedelta(minutes=20),
-                nonce="pulse",
+                nonce="pulse-1",
             )
         )
+        self.engine.record(
+            StudyEvent(
+                student_id=self.student.student_id,
+                kind="pomodoro",
+                value=10,
+                started_at=self.now - timedelta(minutes=19),
+                ended_at=self.now - timedelta(minutes=1),
+                nonce="pulse-2",
+            )
+        )
+
         dashboard = SquadDashboard(self.engine)
         pulse = dashboard.pulse([self.student])
 
-        self.assertEqual(pulse[self.student.student_id]["xp_total"], 200)
-        self.assertEqual(pulse[self.student.student_id]["pending_events"], 1)
+        self.assertEqual(pulse[self.student.student_id]["xp_total"], 1000)
+        self.assertEqual(pulse[self.student.student_id]["pending_events"], 2)
+        self.assertEqual(pulse[self.student.student_id]["predicted_grade"], "B2")
+
+    def test_monthly_ranking(self) -> None:
+        snapshots = [
+            StudentSnapshot(student_id="a", xp_total=500, pomodoros=5),
+            StudentSnapshot(student_id="b", xp_total=900, pomodoros=1),
+            StudentSnapshot(student_id="c", xp_total=900, pomodoros=4),
+        ]
+        ranked = monthly_pulse_ranking(snapshots)
+        self.assertEqual([entry.student_id for entry in ranked], ["c", "b", "a"])
+        self.assertEqual(predicted_grade(ranked[0]), "B3")
+
+    def test_service_persists_and_acknowledges(self) -> None:
+        store = SQLiteEventStore()
+        service = TheCoreService.from_store(store)
+
+        event = StudyEvent(
+            student_id=self.student.student_id,
+            kind="xp",
+            value=250,
+            started_at=self.now - timedelta(minutes=15),
+            ended_at=self.now - timedelta(minutes=5),
+            nonce="service-1",
+        )
+        service.record_event(event)
+        self.assertEqual(len(store.load(self.student.student_id)), 1)
+
+        recovered = TheCoreService.from_store(store)
+        batch = recovered.create_batch(self.student.student_id)
+        aggregate = recovered.acknowledge_batch(batch)
+
+        self.assertEqual(aggregate["xp_total"], 250)
+        self.assertEqual(len(store.load(self.student.student_id)), 0)
+        store.close()
 
 
 if __name__ == "__main__":

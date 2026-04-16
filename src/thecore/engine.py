@@ -36,6 +36,13 @@ class StudyGhost:
 
 
 @dataclass(slots=True)
+class SyncBatch:
+    student_id: str | None
+    events: list[StudyEvent]
+    signatures: list[str]
+
+
+@dataclass(slots=True)
 class LocalSyncEngine:
     """Offline-first event recorder with lightweight anti-spoof verification."""
 
@@ -52,6 +59,28 @@ class LocalSyncEngine:
             return list(self._events)
         return [event for event in self._events if event.student_id == student_id]
 
+    def create_sync_batch(self, student_id: str | None = None) -> SyncBatch:
+        events = self.pending_events(student_id)
+        signatures = [self._signature_for(event) for event in events]
+        return SyncBatch(student_id=student_id, events=events, signatures=signatures)
+
+    def acknowledge_batch(self, batch: SyncBatch) -> dict[str, int]:
+        if not self.verify_signatures(batch.events, batch.signatures):
+            raise ValueError("invalid sync batch signatures")
+
+        xp_total = sum(event.value for event in batch.events if event.kind == "xp")
+        pomodoros = sum(event.value for event in batch.events if event.kind == "pomodoro")
+
+        batch_keys = {(event.student_id, event.nonce) for event in batch.events}
+        self._events = [
+            event for event in self._events if (event.student_id, event.nonce) not in batch_keys
+        ]
+
+        return {"xp_total": xp_total, "pomodoros": pomodoros, "count": len(batch.events)}
+
+    def burst_sync(self, student_id: str | None = None) -> dict[str, int]:
+        batch = self.create_sync_batch(student_id)
+        return self.acknowledge_batch(batch)
     def burst_sync(self, student_id: str | None = None) -> dict[str, int]:
         selected = self.pending_events(student_id)
         xp_total = sum(event.value for event in selected if event.kind == "xp")
