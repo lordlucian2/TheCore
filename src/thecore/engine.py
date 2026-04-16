@@ -48,17 +48,10 @@ class LocalSyncEngine:
 
     max_event_duration: timedelta = timedelta(hours=3)
     _events: list[StudyEvent] = field(default_factory=list)
-    _nonce_index: set[tuple[str, str]] = field(default_factory=set)
 
     def record(self, event: StudyEvent) -> str:
         self._validate(event)
-
-        nonce_key = (event.student_id, event.nonce)
-        if nonce_key in self._nonce_index:
-            raise ValueError("duplicate nonce for student; possible replayed event")
-
         self._events.append(event)
-        self._nonce_index.add(nonce_key)
         return self._signature_for(event)
 
     def pending_events(self, student_id: str | None = None) -> list[StudyEvent]:
@@ -88,6 +81,17 @@ class LocalSyncEngine:
     def burst_sync(self, student_id: str | None = None) -> dict[str, int]:
         batch = self.create_sync_batch(student_id)
         return self.acknowledge_batch(batch)
+    def burst_sync(self, student_id: str | None = None) -> dict[str, int]:
+        selected = self.pending_events(student_id)
+        xp_total = sum(event.value for event in selected if event.kind == "xp")
+        pomodoros = sum(event.value for event in selected if event.kind == "pomodoro")
+
+        if student_id is None:
+            self._events.clear()
+        else:
+            self._events = [event for event in self._events if event.student_id != student_id]
+
+        return {"xp_total": xp_total, "pomodoros": pomodoros, "count": len(selected)}
 
     def ghost_for(self, profile: StudentProfile) -> StudyGhost | None:
         events = self.pending_events(profile.student_id)

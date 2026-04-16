@@ -78,8 +78,7 @@ class TheCoreTests(unittest.TestCase):
             )
         )
 
-        batch = self.engine.create_sync_batch(self.student.student_id)
-        aggregate = self.engine.acknowledge_batch(batch)
+        aggregate = self.engine.burst_sync(self.student.student_id)
         self.assertEqual(aggregate["xp_total"], 120)
         self.assertEqual(aggregate["pomodoros"], 3)
         self.assertEqual(aggregate["count"], 2)
@@ -97,7 +96,7 @@ class TheCoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.engine.record(bad_event)
 
-    def test_quests_dashboard_and_predictions(self) -> None:
+    def test_quests_and_dashboard(self) -> None:
         quests = generate_tutorial_quests()
         self.assertEqual(len(quests), 3)
 
