@@ -18,9 +18,16 @@ python -m unittest discover -s tests
 - `src/thecore/engine.py` — offline events, verification signatures, burst sync, ghost snapshots.
 - `src/thecore/quests.py` — quest types and first tutorial quest generation.
 - `src/thecore/squad.py` — class-level pulse summaries.
+- `src/thecore/vault.py` — peer resource metadata, voting, tag management.
+- `src/thecore/ai.py` — scaffolded Clutch AI query/response modes.
+- `src/thecore/room.py` — room presence, timer sync, and offline ghost modeling.
+- `src/thecore/storage.py` — SQLite event, room, vault, and AI persistence stores.
+- `src/thecore/service.py` — coordinated domain service for events, rooms, Vault, and AI logging.
+- `src/thecore/api.py` — FastAPI adapter for event, room, session, vault, and AI endpoints.
+- `app.py` — root ASGI application entrypoint for Uvicorn.
 
 ## Next steps
 
-- Add persistent local storage (SQLite or LiteFS-friendly log).
-- Expose this domain model via an API (FastAPI).
+- Extend student profile management and room ghost discovery.
 - Add client-side sync protocol and conflict handling.
+- Build a lightweight frontend or API-driven integration layer.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .analytics import StudentSnapshot, predicted_grade, rank_tier
 from .engine import LocalSyncEngine, StudentProfile
 
 
@@ -29,6 +30,8 @@ class SquadDashboard:
                 "pomodoros": pomodoros,
                 "pending_events": len(events),
                 "predicted_grade": predicted_grade(snapshot),
+                "rank_tier": rank_tier(snapshot).value,
+                "streak": self.engine.streak_for(student.student_id),
             }
 
         return result

@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 from typing import Iterable
 
+from .session import StudySession, xp_for_session
+
 
 @dataclass(slots=True)
 class StudentProfile:
@@ -51,6 +53,8 @@ class LocalSyncEngine:
 
     def record(self, event: StudyEvent) -> str:
         self._validate(event)
+        if any(existing.student_id == event.student_id and existing.nonce == event.nonce for existing in self._events):
+            raise ValueError("duplicate event nonce")
         self._events.append(event)
         return self._signature_for(event)
 
@@ -79,10 +83,16 @@ class LocalSyncEngine:
         return {"xp_total": xp_total, "pomodoros": pomodoros, "count": len(batch.events)}
 
     def burst_sync(self, student_id: str | None = None) -> dict[str, int]:
-        batch = self.create_sync_batch(student_id)
-        return self.acknowledge_batch(batch)
-    def burst_sync(self, student_id: str | None = None) -> dict[str, int]:
         selected = self.pending_events(student_id)
+        xp_total = sum(event.value for event in selected if event.kind == "xp")
+        pomodoros = sum(event.value for event in selected if event.kind == "pomodoro")
+
+        if student_id is None:
+            self._events.clear()
+        else:
+            self._events = [event for event in self._events if event.student_id != student_id]
+
+        return {"xp_total": xp_total, "pomodoros": pomodoros, "count": len(selected)}
         xp_total = sum(event.value for event in selected if event.kind == "xp")
         pomodoros = sum(event.value for event in selected if event.kind == "pomodoro")
 
@@ -110,6 +120,30 @@ class LocalSyncEngine:
     def verify_signatures(self, events: Iterable[StudyEvent], signatures: Iterable[str]) -> bool:
         computed = [self._signature_for(event) for event in events]
         return computed == list(signatures)
+
+    def streak_for(self, student_id: str, as_of: datetime | None = None) -> int:
+        if as_of is None:
+            as_of = datetime.now(timezone.utc)
+
+        completed_dates = sorted(
+            {event.ended_at.date() for event in self.pending_events(student_id)}
+        )
+        if not completed_dates:
+            return 0
+
+        streak = 0
+        current_day = as_of.date()
+        if current_day not in completed_dates:
+            current_day -= timedelta(days=1)
+
+        while current_day in completed_dates:
+            streak += 1
+            current_day -= timedelta(days=1)
+
+        return streak
+
+    def session_xp(self, session: StudySession) -> int:
+        return xp_for_session(session)
 
     def _validate(self, event: StudyEvent) -> None:
         if event.value <= 0:

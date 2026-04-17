@@ -1,6 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
+
+
+class RankTier(str, Enum):
+    BRONZE = "Bronze"
+    SILVER = "Silver"
+    GOLD = "Gold"
+    ELITE = "Elite"
 
 
 @dataclass(slots=True)
@@ -23,6 +31,16 @@ def predicted_grade(snapshot: StudentSnapshot) -> str:
     if score >= 500:
         return "C4"
     return "C6"
+
+
+def rank_tier(snapshot: StudentSnapshot) -> RankTier:
+    if snapshot.xp_total >= 1600:
+        return RankTier.ELITE
+    if snapshot.xp_total >= 1000:
+        return RankTier.GOLD
+    if snapshot.xp_total >= 500:
+        return RankTier.SILVER
+    return RankTier.BRONZE
 
 
 def monthly_pulse_ranking(snapshots: list[StudentSnapshot]) -> list[StudentSnapshot]:
